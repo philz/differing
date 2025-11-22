@@ -62,7 +62,7 @@ brews:
       owner: philz
       name: homebrew-tap
       token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
-    folder: Formula
+    directory: Formula
     homepage: https://github.com/philz/differing
     description: "A stand-alone code review tool for reviewing LLM-generated changes"
     license: MIT
