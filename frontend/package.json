@@ -1,0 +1,28 @@
+{
+  "name": "diff-viewer-frontend",
+  "version": "1.0.0",
+  "description": "Standalone diff viewer frontend",
+  "main": "index.js",
+  "scripts": {
+    "start": "node dev-server.js",
+    "build": "node build.js",
+    "build:dev": "node build.js --dev",
+    "dev": "node dev-server.js",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint ."
+  },
+  "dependencies": {
+    "monaco-editor": "^0.44.0",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.39.1",
+    "@types/react": "^18.2.0",
+    "@types/react-dom": "^18.2.0",
+    "esbuild": "^0.19.0",
+    "eslint": "^9.39.1",
+    "typescript": "^5.2.2",
+    "typescript-eslint": "^8.47.0"
+  }
+}

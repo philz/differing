@@ -1,0 +1,21 @@
+# Dependencies
+frontend/node_modules/
+
+# Build artifacts
+frontend/dist/
+*.exe
+differing
+
+# Temporary files
+*.log
+/tmp/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
