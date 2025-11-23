@@ -10,7 +10,7 @@ The implementation uses Monaco's diff view, and allows
 you to accumulate comments which you can paste into your
 favorite agent.
 
-# TODO: Screenshot
+![differing screenshot](screenshot.png)
 
 ## Installation
 
@@ -67,25 +67,6 @@ make
 ## Releases
 
 New releases are automatically created on every commit to `main`. Versions follow the pattern `v0.0.N` where N is the total commit count.
-
-## Usage
-
-```bash
-./differing
-```
-
-Then open your browser to `http://localhost:3844`
-
-### Options
-
-```
--addr string
-      listen address (default "localhost")
--port string
-      listen port (default "3844")
--open
-      automatically open web browser
-```
 
 ## License
 
