@@ -19,8 +19,10 @@ favorite agent.
 One-liner that auto-detects your OS and architecture and downloads the latest release:
 
 ```bash
-curl -sSL https://raw.githubusercontent.com/philz/differing/main/install.sh | sh
+curl -Lo differing "https://github.com/philz/differing/releases/latest/download/differing_$(uname -s | tr '[:upper:]' '[:lower:]')_$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/')" && chmod +x differing
 ```
+
+This downloads the binary as `differing` in your current directory and makes it executable. Move it to your PATH if desired.
 
 ### Homebrew (macOS/Linux)
 
