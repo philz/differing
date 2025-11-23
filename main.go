@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"runtime"
 	"sort"
 	"strconv"
@@ -21,6 +22,12 @@ import (
 
 //go:embed all:frontend/dist
 var frontendFS embed.FS
+
+// Global git repository root and secured root for file access
+var (
+	gitRoot    string
+	secureRoot *os.Root
+)
 
 type DiffInfo struct {
 	ID         string    `json:"id"`
@@ -52,10 +59,18 @@ func main() {
 	)
 	flag.Parse()
 
-	// Check if we're in a git repository
-	cmd := exec.Command("git", "rev-parse", "--git-dir")
-	if err := cmd.Run(); err != nil {
-		fmt.Fprintln(os.Stderr, "Error: not a git repository")
+	// Check if we're in a git repository and get the root
+	var err error
+	gitRoot, err = getGitRoot()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		os.Exit(1)
+	}
+
+	// Create a secure root to enforce filesystem boundaries
+	secureRoot, err = os.OpenRoot(gitRoot)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error: failed to create secure root: %v\n", err)
 		os.Exit(1)
 	}
 
@@ -287,6 +302,53 @@ func getFileDiff(c *gin.Context) {
 	c.JSON(http.StatusOK, fileDiff)
 }
 
+// getGitRoot returns the root directory of the git repository
+// This works for both regular repositories and git worktrees
+func getGitRoot() (string, error) {
+	cmd := exec.Command("git", "rev-parse", "--show-toplevel")
+	output, err := cmd.Output()
+	if err != nil {
+		return "", fmt.Errorf("not a git repository")
+	}
+	return strings.TrimSpace(string(output)), nil
+}
+
+// validateRepoPath verifies that a file is tracked by git and within the repository boundaries
+// Returns an error if the file is not tracked or path traversal is attempted
+func validateRepoPath(filePath string) error {
+	// Prevent empty or absolute paths
+	if filePath == "" || filepath.IsAbs(filePath) {
+		return fmt.Errorf("invalid file path: %s", filePath)
+	}
+
+	// Check if the file is tracked by git
+	cmd := exec.Command("git", "-C", gitRoot, "ls-files", "--error-unmatch", filePath)
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("file not tracked by git: %s", filePath)
+	}
+
+	// Additional check: ensure the path doesn't escape the repository
+	// This is redundant with os.Root but provides defense in depth
+	fullPath := filepath.Join(gitRoot, filePath)
+	absRepoDir, err := filepath.Abs(gitRoot)
+	if err != nil {
+		return fmt.Errorf("unable to resolve repository path: %w", err)
+	}
+
+	absFilePath, err := filepath.Abs(fullPath)
+	if err != nil {
+		return fmt.Errorf("unable to resolve file path: %w", err)
+	}
+
+	// Ensure the file is within the repository
+	if !strings.HasPrefix(absFilePath, absRepoDir+string(filepath.Separator)) &&
+		absFilePath != absRepoDir {
+		return fmt.Errorf("file path outside repository: %s", filePath)
+	}
+
+	return nil
+}
+
 func saveFile(c *gin.Context) {
 	filePath := strings.TrimPrefix(c.Param("filepath"), "/")
 
@@ -299,10 +361,24 @@ func saveFile(c *gin.Context) {
 		return
 	}
 
-	// Save directly to working tree
-	err := os.WriteFile(filePath, []byte(req.Content), 0644)
+	// Validate that the file is tracked by git and within repository boundaries
+	if err := validateRepoPath(filePath); err != nil {
+		c.JSON(http.StatusForbidden, gin.H{"error": err.Error()})
+		return
+	}
+
+	// Use the secure root to write the file, which provides additional protection
+	// against directory traversal attacks
+	file, err := secureRoot.OpenFile(filePath, os.O_WRONLY|os.O_TRUNC, 0644)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to save file"})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to open file"})
+		return
+	}
+	defer file.Close()
+
+	_, err = file.Write([]byte(req.Content))
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to write file"})
 		return
 	}
 

@@ -1,6 +1,6 @@
 module differing
 
-go 1.21
+go 1.25
 
 require github.com/gin-gonic/gin v1.9.1
 
