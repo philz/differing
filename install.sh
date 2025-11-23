@@ -4,7 +4,6 @@ set -e
 # Differing installer script
 # Usage: curl -sSL https://raw.githubusercontent.com/philz/differing/main/install.sh | sh
 
-VERSION="${VERSION:-0.1.0}"
 REPO="philz/differing"
 
 # Detect OS
@@ -24,21 +23,29 @@ case "$ARCH" in
     *)          echo "Unsupported architecture: $ARCH"; exit 1;;
 esac
 
-# Construct download URL
-FILENAME="differing_${VERSION}_${OS}_${ARCH}.tar.gz"
-URL="https://github.com/${REPO}/releases/download/v${VERSION}/${FILENAME}"
+# Get latest release version
+echo "Fetching latest release..."
+VERSION=$(curl -sSL "https://api.github.com/repos/${REPO}/releases/latest" | grep '"tag_name":' | sed -E 's/.*"([^"]+)".*/\1/')
+
+if [ -z "$VERSION" ]; then
+    echo "Error: Could not determine latest version"
+    exit 1
+fi
+
+# Construct download URL - binary format (no .tar.gz)
+FILENAME="differing_${OS}_${ARCH}"
+URL="https://github.com/${REPO}/releases/download/${VERSION}/${FILENAME}"
 
 echo "Downloading differing ${VERSION} for ${OS}/${ARCH}..."
-echo "URL: ${URL}"
 
-# Download and extract
-curl -sSL "$URL" | tar xzf - differing
+# Download binary directly
+curl -sSL -o differing "$URL"
 
 # Make executable
 chmod +x differing
 
 echo ""
-echo "✓ differing installed successfully!"
+echo "✓ differing ${VERSION} installed successfully!"
 echo ""
 echo "To use differing, run:"
 echo "  ./differing"

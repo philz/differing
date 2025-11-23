@@ -16,7 +16,7 @@ favorite agent.
 
 ### Quick Install (macOS/Linux)
 
-One-liner that auto-detects your OS and architecture:
+One-liner that auto-detects your OS and architecture and downloads the latest release:
 
 ```bash
 curl -sSL https://raw.githubusercontent.com/philz/differing/main/install.sh | sh
@@ -30,29 +30,31 @@ brew install philz/tap/differing
 
 ### Manual Download
 
-Download pre-built binaries from the [releases page](https://github.com/philz/differing/releases).
+Download pre-built binaries from the [releases page](https://github.com/philz/differing/releases/latest).
 
-**macOS:**
+Binaries are named `differing_<os>_<arch>` and are released automatically on every commit to main.
+
+**Examples:**
 ```bash
-# Intel Mac
-curl -L https://github.com/philz/differing/releases/latest/download/differing_0.1.0_darwin_amd64.tar.gz | tar xz
+# macOS Intel
+curl -LO https://github.com/philz/differing/releases/latest/download/differing_darwin_amd64
+chmod +x differing_darwin_amd64
+mv differing_darwin_amd64 differing
 
-# Apple Silicon Mac
-curl -L https://github.com/philz/differing/releases/latest/download/differing_0.1.0_darwin_arm64.tar.gz | tar xz
-```
+# macOS Apple Silicon
+curl -LO https://github.com/philz/differing/releases/latest/download/differing_darwin_arm64
+chmod +x differing_darwin_arm64
+mv differing_darwin_arm64 differing
 
-**Linux:**
-```bash
-# x86_64
-curl -L https://github.com/philz/differing/releases/latest/download/differing_0.1.0_linux_amd64.tar.gz | tar xz
-
-# ARM64
-curl -L https://github.com/philz/differing/releases/latest/download/differing_0.1.0_linux_arm64.tar.gz | tar xz
+# Linux x86_64
+curl -LO https://github.com/philz/differing/releases/latest/download/differing_linux_amd64
+chmod +x differing_linux_amd64
+mv differing_linux_amd64 differing
 ```
 
 **Windows:**
 
-Download the appropriate zip file from the [releases page](https://github.com/philz/differing/releases) and extract it.
+Download `differing_windows_amd64` or `differing_windows_arm64` from the [releases page](https://github.com/philz/differing/releases/latest).
 
 ### Build from Source
 
@@ -61,6 +63,10 @@ git clone https://github.com/philz/differing.git
 cd differing
 make
 ```
+
+## Releases
+
+New releases are automatically created on every commit to `main`. Versions follow the pattern `v0.0.N` where N is the total commit count.
 
 ## Usage
 
