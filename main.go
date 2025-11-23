@@ -52,6 +52,13 @@ func main() {
 	)
 	flag.Parse()
 
+	// Check if we're in a git repository
+	cmd := exec.Command("git", "rev-parse", "--git-dir")
+	if err := cmd.Run(); err != nil {
+		fmt.Fprintln(os.Stderr, "Error: not a git repository")
+		os.Exit(1)
+	}
+
 	// Set GIN to release mode for production
 	gin.SetMode(gin.ReleaseMode)
 	r := gin.Default()
