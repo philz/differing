@@ -236,14 +236,14 @@ const DiffEditor: React.FC<DiffEditorProps> = ({
             selectedText = model?.getLineContent(position.lineNumber) || '';
           }
           
-          const editorDom = originalEditor.getDomNode();
-          const rect = editorDom?.getBoundingClientRect();
+          // Use the actual mouse event coordinates for positioning
+          const mouseEvent = e.event.browserEvent as MouseEvent;
           
           setShowCommentDialog({
             line: startLine,
             side: 'left',
-            x: (rect?.left || 0) + 100,
-            y: (rect?.top || 0) + (position.lineNumber * 19) + 50,
+            x: mouseEvent.clientX + 100,
+            y: mouseEvent.clientY,
             selectedText: selectedText,
             startLine: startLine,
             endLine: endLine
@@ -274,14 +274,14 @@ const DiffEditor: React.FC<DiffEditorProps> = ({
             selectedText = model?.getLineContent(position.lineNumber) || '';
           }
           
-          const editorDom = modifiedEditor.getDomNode();
-          const rect = editorDom?.getBoundingClientRect();
+          // Use the actual mouse event coordinates for positioning
+          const mouseEvent = e.event.browserEvent as MouseEvent;
           
           setShowCommentDialog({
             line: startLine,
             side: 'right',
-            x: (rect?.left || 0) + 100,
-            y: (rect?.top || 0) + (position.lineNumber * 19) + 50,
+            x: mouseEvent.clientX + 100,
+            y: mouseEvent.clientY,
             selectedText: selectedText,
             startLine: startLine,
             endLine: endLine
