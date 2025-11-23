@@ -14,30 +14,40 @@ favorite agent.
 
 ## Installation
 
-### Download Pre-built Binaries
+### Quick Install (macOS/Linux)
 
-Download the latest release for your platform from the [releases page](https://github.com/philz/differing/releases):
+One-liner that auto-detects your OS and architecture:
+
+```bash
+curl -sSL https://raw.githubusercontent.com/philz/differing/main/install.sh | sh
+```
+
+### Homebrew (macOS/Linux)
+
+```bash
+brew install philz/tap/differing
+```
+
+### Manual Download
+
+Download pre-built binaries from the [releases page](https://github.com/philz/differing/releases).
 
 **macOS:**
 ```bash
 # Intel Mac
 curl -L https://github.com/philz/differing/releases/latest/download/differing_0.1.0_darwin_amd64.tar.gz | tar xz
-chmod +x differing
 
 # Apple Silicon Mac
 curl -L https://github.com/philz/differing/releases/latest/download/differing_0.1.0_darwin_arm64.tar.gz | tar xz
-chmod +x differing
 ```
 
 **Linux:**
 ```bash
 # x86_64
 curl -L https://github.com/philz/differing/releases/latest/download/differing_0.1.0_linux_amd64.tar.gz | tar xz
-chmod +x differing
 
 # ARM64
 curl -L https://github.com/philz/differing/releases/latest/download/differing_0.1.0_linux_arm64.tar.gz | tar xz
-chmod +x differing
 ```
 
 **Windows:**
@@ -45,8 +55,6 @@ chmod +x differing
 Download the appropriate zip file from the [releases page](https://github.com/philz/differing/releases) and extract it.
 
 ### Build from Source
-
-If you have Go installed, you can build from source:
 
 ```bash
 git clone https://github.com/philz/differing.git
