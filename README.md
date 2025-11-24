@@ -14,15 +14,13 @@ favorite agent.
 
 ## Installation
 
-### Quick Install (macOS/Linux)
-
-One-liner that auto-detects your OS and architecture and downloads the latest release:
+### Pre-Built Binaries (MacOS/Linux)
 
 ```bash
 curl -Lo differing "https://github.com/philz/differing/releases/latest/download/differing_$(uname -s | tr '[:upper:]' '[:lower:]')_$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/')" && chmod +x differing
 ```
 
-This downloads the binary as `differing` in your current directory and makes it executable. Move it to your PATH if desired.
+The binaries are on the [releases page](https://github.com/philz/differing/releases/latest).
 
 ### Homebrew (macOS/Linux)
 
@@ -30,35 +28,9 @@ This downloads the binary as `differing` in your current directory and makes it 
 brew install philz/tap/differing
 ```
 
-### Manual Download
-
-Download pre-built binaries from the [releases page](https://github.com/philz/differing/releases/latest).
-
-Binaries are named `differing_<os>_<arch>` and are released automatically on every commit to main.
-
-**Examples:**
-```bash
-# macOS Intel
-curl -LO https://github.com/philz/differing/releases/latest/download/differing_darwin_amd64
-chmod +x differing_darwin_amd64
-mv differing_darwin_amd64 differing
-
-# macOS Apple Silicon
-curl -LO https://github.com/philz/differing/releases/latest/download/differing_darwin_arm64
-chmod +x differing_darwin_arm64
-mv differing_darwin_arm64 differing
-
-# Linux x86_64
-curl -LO https://github.com/philz/differing/releases/latest/download/differing_linux_amd64
-chmod +x differing_linux_amd64
-mv differing_linux_amd64 differing
-```
-
-**Windows:**
-
-Download `differing_windows_amd64` or `differing_windows_arm64` from the [releases page](https://github.com/philz/differing/releases/latest).
-
 ### Build from Source
+
+You'll need Go and Node.
 
 ```bash
 git clone https://github.com/philz/differing.git
@@ -68,8 +40,9 @@ make
 
 ## Releases
 
-New releases are automatically created on every commit to `main`. Versions follow the pattern `v0.0.N` where N is the total commit count.
+New releases are automatically created on every commit to `main`. Versions
+follow the pattern `v0.0.N` where N is the total commit count.
 
 ## License
 
-MIT License - feel free to use this as a foundation for your own diff viewing tools!
+MIT License
