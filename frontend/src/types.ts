@@ -4,6 +4,8 @@ export interface DiffInfo {
   author: string;
   timestamp: string;
   filesCount: number;
+  additions: number;
+  deletions: number;
 }
 
 export interface FileInfo {

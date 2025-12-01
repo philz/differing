@@ -29,11 +29,16 @@ const DiffChooser: React.FC<DiffChooserProps> = ({ diffs, selectedDiff, onSelect
         }}
       >
         <option value="">Choose base commit...</option>
-        {diffs.map((diff) => (
-          <option key={diff.id} value={diff.id}>
-            {diff.message} - {diff.author} ({diff.filesCount} files)
-          </option>
-        ))}
+        {diffs.map((diff) => {
+          const stats = `${diff.filesCount} files, +${diff.additions}/-${diff.deletions}`;
+          return (
+            <option key={diff.id} value={diff.id}>
+              {diff.id === 'working'
+                ? `Working Changes (${stats})`
+                : `${diff.message} - ${diff.author} (${stats})`}
+            </option>
+          );
+        })}
       </select>
     </div>
   );

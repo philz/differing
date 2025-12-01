@@ -35,6 +35,8 @@ type DiffInfo struct {
 	Author     string    `json:"author"`
 	Timestamp  time.Time `json:"timestamp"`
 	FilesCount int       `json:"filesCount"`
+	Additions  int       `json:"additions"`
+	Deletions  int       `json:"deletions"`
 }
 
 type FileInfo struct {
@@ -174,6 +176,24 @@ func openBrowser(url string) {
 }
 
 func getDiffs(c *gin.Context) {
+	var diffs []DiffInfo
+
+	// Always include working changes entry
+	// Get diffstat for working changes (unstaged + staged combined)
+	workingStatCmd := exec.Command("git", "diff", "HEAD", "--numstat")
+	workingStatOutput, _ := workingStatCmd.Output()
+	workingAdditions, workingDeletions, workingFilesCount := parseDiffStat(string(workingStatOutput))
+
+	diffs = append(diffs, DiffInfo{
+		ID:         "working",
+		Message:    "Working Changes",
+		Author:     "",
+		Timestamp:  time.Now(),
+		FilesCount: workingFilesCount,
+		Additions:  workingAdditions,
+		Deletions:  workingDeletions,
+	})
+
 	// Get git commits/diffs
 	cmd := exec.Command("git", "log", "--oneline", "-20", "--pretty=format:%H%x00%s%x00%an%x00%at")
 	output, err := cmd.Output()
@@ -183,7 +203,6 @@ func getDiffs(c *gin.Context) {
 	}
 
 	lines := strings.Split(strings.TrimSpace(string(output)), "\n")
-	var diffs []DiffInfo
 
 	for _, line := range lines {
 		if line == "" {
@@ -196,13 +215,10 @@ func getDiffs(c *gin.Context) {
 
 		timestamp, _ := strconv.ParseInt(parts[3], 10, 64)
 
-		// Get file count for this commit
-		countCmd := exec.Command("git", "diff-tree", "--no-commit-id", "--name-only", "-r", parts[0])
-		countOutput, _ := countCmd.Output()
-		filesCount := len(strings.Split(strings.TrimSpace(string(countOutput)), "\n"))
-		if string(countOutput) == "" {
-			filesCount = 0
-		}
+		// Get diffstat for this commit
+		statCmd := exec.Command("git", "diff", parts[0]+"^", parts[0], "--numstat")
+		statOutput, _ := statCmd.Output()
+		additions, deletions, filesCount := parseDiffStat(string(statOutput))
 
 		diffs = append(diffs, DiffInfo{
 			ID:         parts[0],
@@ -210,18 +226,55 @@ func getDiffs(c *gin.Context) {
 			Author:     parts[2],
 			Timestamp:  time.Unix(timestamp, 0),
 			FilesCount: filesCount,
+			Additions:  additions,
+			Deletions:  deletions,
 		})
 	}
 
 	c.JSON(http.StatusOK, diffs)
 }
 
+// parseDiffStat parses git diff --numstat output and returns additions, deletions, and file count
+func parseDiffStat(output string) (additions, deletions, filesCount int) {
+	lines := strings.Split(strings.TrimSpace(output), "\n")
+	for _, line := range lines {
+		if line == "" {
+			continue
+		}
+		parts := strings.Fields(line)
+		if len(parts) >= 2 {
+			// Handle binary files (shown as "-" in numstat)
+			if parts[0] != "-" {
+				add, _ := strconv.Atoi(parts[0])
+				additions += add
+			}
+			if parts[1] != "-" {
+				del, _ := strconv.Atoi(parts[1])
+				deletions += del
+			}
+			filesCount++
+		}
+	}
+	return
+}
+
 func getDiffFiles(c *gin.Context) {
 	diffID := c.Param("id")
 
-	// Get files changed from parent of commit to working tree
-	// This shows all changes including the selected commit
-	cmd := exec.Command("git", "diff", "--name-status", diffID+"^")
+	var cmd *exec.Cmd
+	var statBaseArg string
+
+	if diffID == "working" {
+		// For working changes, diff HEAD against working tree
+		cmd = exec.Command("git", "diff", "--name-status", "HEAD")
+		statBaseArg = "HEAD"
+	} else {
+		// Get files changed from parent of commit to working tree
+		// This shows all changes including the selected commit
+		cmd = exec.Command("git", "diff", "--name-status", diffID+"^")
+		statBaseArg = diffID + "^"
+	}
+
 	output, err := cmd.Output()
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get diff files"})
@@ -251,7 +304,7 @@ func getDiffFiles(c *gin.Context) {
 		}
 
 		// Get additions/deletions for this file
-		statCmd := exec.Command("git", "diff", diffID+"^", "--numstat", "--", parts[1])
+		statCmd := exec.Command("git", "diff", statBaseArg, "--numstat", "--", parts[1])
 		statOutput, _ := statCmd.Output()
 		additions, deletions := 0, 0
 		if statOutput != nil {
@@ -282,8 +335,15 @@ func getFileDiff(c *gin.Context) {
 	diffID := c.Param("id")
 	filePath := strings.TrimPrefix(c.Param("filepath"), "/")
 
-	// Get old version of file (from parent of selected commit)
-	oldCmd := exec.Command("git", "show", diffID+"^:"+filePath)
+	var oldCmd *exec.Cmd
+	if diffID == "working" {
+		// For working changes, compare HEAD to working tree
+		oldCmd = exec.Command("git", "show", "HEAD:"+filePath)
+	} else {
+		// Get old version of file (from parent of selected commit)
+		oldCmd = exec.Command("git", "show", diffID+"^:"+filePath)
+	}
+
 	oldOutput, _ := oldCmd.Output()
 	oldContent := string(oldOutput)
 

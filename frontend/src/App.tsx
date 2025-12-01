@@ -52,9 +52,15 @@ const App: React.FC = () => {
       setError(null);
       const diffsData = await DiffAPI.getDiffs();
       setDiffs(diffsData);
-      // Auto-select first diff
+      // Auto-select: working changes if non-empty, otherwise first commit
       if (diffsData.length > 0) {
-        setSelectedDiff(diffsData[0].id);
+        const workingChanges = diffsData.find(d => d.id === 'working');
+        if (workingChanges && workingChanges.filesCount > 0) {
+          setSelectedDiff('working');
+        } else if (diffsData.length > 1) {
+          // Select first commit (skip working changes entry)
+          setSelectedDiff(diffsData[1].id);
+        }
       }
     } catch (err) {
       setError(`Failed to load diffs: ${err}`);
