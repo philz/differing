@@ -1,6 +1,7 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState, forwardRef, useImperativeHandle } from 'react';
 import * as monaco from 'monaco-editor';
 import { FileDiff, Comment } from '../types';
+import { DiffEditorHandle } from '../App';
 
 let extensionToLanguageMap: Map<string, string> | null = null;
 
@@ -30,12 +31,12 @@ interface DiffEditorProps {
   onAddComment: (line: number, side: 'left' | 'right', text: string, selectedText?: string, startLine?: number, endLine?: number) => void;
 }
 
-const DiffEditor: React.FC<DiffEditorProps> = ({
+const DiffEditor = forwardRef<DiffEditorHandle, DiffEditorProps>(({
   fileDiff,
   comments,
   onContentChange,
   onAddComment
-}) => {
+}, ref) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const editorRef = useRef<monaco.editor.IStandaloneDiffEditor | null>(null);
   const [showCommentDialog, setShowCommentDialog] = useState<{
@@ -50,6 +51,79 @@ const DiffEditor: React.FC<DiffEditorProps> = ({
   const [commentText, setCommentText] = useState('');
   const currentHoveredLineRef = useRef<{left: number | null, right: number | null}>({left: null, right: null});
   const visibleGlyphsRef = useRef<Set<string>>(new Set());
+  const currentChangeIndexRef = useRef<number>(-1);
+
+  // Expose navigation methods to parent
+  useImperativeHandle(ref, () => ({
+    goToNextChange: () => {
+      const editor = editorRef.current;
+      if (!editor) return;
+
+      const lineChanges = editor.getLineChanges();
+      if (!lineChanges || lineChanges.length === 0) return;
+
+      const modifiedEditor = editor.getModifiedEditor();
+      const currentLine = modifiedEditor.getPosition()?.lineNumber ?? 0;
+
+      // Find the next change after current position
+      let nextIndex = currentChangeIndexRef.current + 1;
+      if (nextIndex >= lineChanges.length) {
+        nextIndex = 0; // Wrap around to first change
+      }
+
+      // Or find the first change that starts after current line
+      for (let i = 0; i < lineChanges.length; i++) {
+        const change = lineChanges[i];
+        const changeLine = change.modifiedStartLineNumber || change.originalStartLineNumber;
+        if (changeLine > currentLine) {
+          nextIndex = i;
+          break;
+        }
+      }
+
+      currentChangeIndexRef.current = nextIndex;
+      const change = lineChanges[nextIndex];
+      const targetLine = change.modifiedStartLineNumber || change.originalStartLineNumber;
+
+      modifiedEditor.revealLineInCenter(targetLine);
+      modifiedEditor.setPosition({ lineNumber: targetLine, column: 1 });
+      modifiedEditor.focus();
+    },
+    goToPreviousChange: () => {
+      const editor = editorRef.current;
+      if (!editor) return;
+
+      const lineChanges = editor.getLineChanges();
+      if (!lineChanges || lineChanges.length === 0) return;
+
+      const modifiedEditor = editor.getModifiedEditor();
+      const currentLine = modifiedEditor.getPosition()?.lineNumber ?? Infinity;
+
+      // Find the previous change before current position
+      let prevIndex = currentChangeIndexRef.current - 1;
+      if (prevIndex < 0) {
+        prevIndex = lineChanges.length - 1; // Wrap around to last change
+      }
+
+      // Or find the last change that starts before current line
+      for (let i = lineChanges.length - 1; i >= 0; i--) {
+        const change = lineChanges[i];
+        const changeLine = change.modifiedStartLineNumber || change.originalStartLineNumber;
+        if (changeLine < currentLine) {
+          prevIndex = i;
+          break;
+        }
+      }
+
+      currentChangeIndexRef.current = prevIndex;
+      const change = lineChanges[prevIndex];
+      const targetLine = change.modifiedStartLineNumber || change.originalStartLineNumber;
+
+      modifiedEditor.revealLineInCenter(targetLine);
+      modifiedEditor.setPosition({ lineNumber: targetLine, column: 1 });
+      modifiedEditor.focus();
+    }
+  }), []);
 
   useEffect(() => {
     if (!containerRef.current) return;
@@ -504,6 +578,6 @@ const DiffEditor: React.FC<DiffEditorProps> = ({
       `}</style>
     </div>
   );
-};
+});
 
 export default DiffEditor;

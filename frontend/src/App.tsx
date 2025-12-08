@@ -1,10 +1,15 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { DiffInfo, FileInfo, FileDiff, Comment } from './types';
 import { DiffAPI } from './api';
 import DiffChooser from './components/DiffChooser';
 import FileChooser from './components/FileChooser';
 import DiffEditor from './components/DiffEditor';
 import FloatingCommentPanel from './components/FloatingCommentPanel';
+
+export interface DiffEditorHandle {
+  goToNextChange: () => void;
+  goToPreviousChange: () => void;
+}
 
 const App: React.FC = () => {
   const [diffs, setDiffs] = useState<DiffInfo[]>([]);
@@ -19,6 +24,7 @@ const App: React.FC = () => {
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
   const [showCommentPanel, setShowCommentPanel] = useState(false);
   const [commentText, setCommentText] = useState('');
+  const diffEditorRef = useRef<DiffEditorHandle>(null);
 
   // Load available diffs on mount
   useEffect(() => {
@@ -150,6 +156,53 @@ const App: React.FC = () => {
     }
   };
 
+  // File navigation functions
+  const goToNextFile = useCallback(() => {
+    if (files.length === 0 || !selectedFile) return;
+    const currentIndex = files.findIndex(f => f.path === selectedFile);
+    if (currentIndex < files.length - 1) {
+      setSelectedFile(files[currentIndex + 1].path);
+    }
+  }, [files, selectedFile]);
+
+  const goToPreviousFile = useCallback(() => {
+    if (files.length === 0 || !selectedFile) return;
+    const currentIndex = files.findIndex(f => f.path === selectedFile);
+    if (currentIndex > 0) {
+      setSelectedFile(files[currentIndex - 1].path);
+    }
+  }, [files, selectedFile]);
+
+  // Keyboard shortcut handler
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Only handle Ctrl+key combinations
+      if (!e.ctrlKey) return;
+
+      switch (e.key) {
+        case 'k':
+          e.preventDefault();
+          goToPreviousFile();
+          break;
+        case 'j':
+          e.preventDefault();
+          goToNextFile();
+          break;
+        case 'p':
+          e.preventDefault();
+          diffEditorRef.current?.goToPreviousChange();
+          break;
+        case 'n':
+          e.preventDefault();
+          diffEditorRef.current?.goToNextChange();
+          break;
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [goToNextFile, goToPreviousFile]);
+
   return (
     <div style={{
       height: '100vh',
@@ -167,16 +220,25 @@ const App: React.FC = () => {
         gap: '16px',
         flexWrap: 'wrap'
       }}>
-        {/* App name */}
-        <h1 style={{
-          margin: 0,
-          color: '#2c3e50',
-          fontSize: '20px',
-          fontWeight: '600',
-          letterSpacing: '-0.5px'
-        }}>
-          differing
-        </h1>
+        {/* App name and keyboard shortcuts */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+          <h1 style={{
+            margin: 0,
+            color: '#2c3e50',
+            fontSize: '20px',
+            fontWeight: '600',
+            letterSpacing: '-0.5px'
+          }}>
+            differing
+          </h1>
+          <div style={{
+            fontSize: '10px',
+            color: '#6c757d',
+            fontFamily: 'monospace'
+          }}>
+            ^j/k file &nbsp; ^n/p change
+          </div>
+        </div>
 
         {/* Base commit selector */}
         <div style={{ minWidth: '200px', flex: '1' }}>
@@ -322,6 +384,7 @@ const App: React.FC = () => {
         {!loading && fileDiff && selectedDiff && (
           <div style={{ flex: 1, overflow: 'hidden' }}>
             <DiffEditor
+              ref={diffEditorRef}
               fileDiff={fileDiff}
               comments={currentFileComments}
               onContentChange={handleContentChange}
