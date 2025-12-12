@@ -83,6 +83,7 @@ func main() {
 	// API routes
 	api := r.Group("/api")
 	{
+		api.GET("/repo-info", getRepoInfo)
 		api.GET("/diffs", getDiffs)
 		api.GET("/diffs/:id/files", getDiffFiles)
 		api.GET("/file-diff/:id/*filepath", getFileDiff)
@@ -173,6 +174,10 @@ func openBrowser(url string) {
 	if err := cmd.Start(); err != nil {
 		log.Printf("Failed to open browser: %v", err)
 	}
+}
+
+func getRepoInfo(c *gin.Context) {
+	c.JSON(http.StatusOK, gin.H{"path": gitRoot})
 }
 
 func getDiffs(c *gin.Context) {
@@ -348,9 +353,14 @@ func getFileDiff(c *gin.Context) {
 	oldContent := string(oldOutput)
 
 	// Get new version of file (from working tree)
+	// Use secureRoot which is rooted at gitRoot, ensuring correct path resolution
+	// regardless of the current working directory
 	newContent := ""
-	if fileData, err := os.ReadFile(filePath); err == nil {
-		newContent = string(fileData)
+	if file, err := secureRoot.Open(filePath); err == nil {
+		if fileData, err := io.ReadAll(file); err == nil {
+			newContent = string(fileData)
+		}
+		file.Close()
 	}
 
 	fileDiff := FileDiff{

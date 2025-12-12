@@ -11,6 +11,12 @@ export interface DiffEditorHandle {
   goToPreviousChange: () => void;
 }
 
+interface CommentHistoryEntry {
+  timestamp: string;
+  comments: Comment[];
+  commentText: string;
+}
+
 const App: React.FC = () => {
   const [diffs, setDiffs] = useState<DiffInfo[]>([]);
   const [selectedDiff, setSelectedDiff] = useState<string | null>(null);
@@ -24,12 +30,73 @@ const App: React.FC = () => {
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
   const [showCommentPanel, setShowCommentPanel] = useState(false);
   const [commentText, setCommentText] = useState('');
+  const [repoPath, setRepoPath] = useState<string | null>(null);
+  const [copyStatus, setCopyStatus] = useState<'idle' | 'copied' | 'error'>('idle');
+  const [commentHistory, setCommentHistory] = useState<CommentHistoryEntry[]>([]);
+  const [showHistory, setShowHistory] = useState(false);
   const diffEditorRef = useRef<DiffEditorHandle>(null);
+  const historyDropdownRef = useRef<HTMLDivElement>(null);
 
-  // Load available diffs on mount
+  // Close history dropdown when clicking outside
   useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (historyDropdownRef.current && !historyDropdownRef.current.contains(e.target as Node)) {
+        setShowHistory(false);
+      }
+    };
+
+    if (showHistory) {
+      document.addEventListener('mousedown', handleClickOutside);
+      return () => document.removeEventListener('mousedown', handleClickOutside);
+    }
+  }, [showHistory]);
+
+  // LocalStorage key based on repo path
+  const getStorageKey = (suffix: string) => repoPath ? `diffy:${repoPath}:${suffix}` : null;
+
+  // Load repo info and diffs on mount
+  useEffect(() => {
+    loadRepoInfo();
     loadDiffs();
   }, []);
+
+  // Load comments from localStorage when repoPath is available
+  useEffect(() => {
+    if (!repoPath) return;
+
+    const commentsKey = getStorageKey('comments');
+    const historyKey = getStorageKey('history');
+
+    if (commentsKey) {
+      const stored = localStorage.getItem(commentsKey);
+      if (stored) {
+        try {
+          setAllComments(JSON.parse(stored));
+        } catch (e) {
+          console.error('Failed to parse stored comments:', e);
+        }
+      }
+    }
+
+    if (historyKey) {
+      const stored = localStorage.getItem(historyKey);
+      if (stored) {
+        try {
+          setCommentHistory(JSON.parse(stored));
+        } catch (e) {
+          console.error('Failed to parse stored history:', e);
+        }
+      }
+    }
+  }, [repoPath]);
+
+  // Save comments to localStorage when they change
+  useEffect(() => {
+    const commentsKey = getStorageKey('comments');
+    if (commentsKey && repoPath) {
+      localStorage.setItem(commentsKey, JSON.stringify(allComments));
+    }
+  }, [allComments, repoPath]);
 
   // Load files when diff is selected
   useEffect(() => {
@@ -51,6 +118,15 @@ const App: React.FC = () => {
   const currentFileComments = allComments.filter(
     comment => comment.diffId === selectedDiff && comment.filePath === selectedFile
   );
+
+  const loadRepoInfo = async () => {
+    try {
+      const info = await DiffAPI.getRepoInfo();
+      setRepoPath(info.path);
+    } catch (err) {
+      console.error('Failed to load repo info:', err);
+    }
+  };
 
   const loadDiffs = async () => {
     try {
@@ -147,12 +223,56 @@ const App: React.FC = () => {
   // const handleDeleteComment = (commentId: string) => {
   //   setComments(prev => prev.filter(c => c.id !== commentId));
   // };
-  
+
   const handleCopyComments = async () => {
+    if (!commentText.trim()) return;
     try {
       await navigator.clipboard.writeText(commentText);
+      setCopyStatus('copied');
+      setTimeout(() => setCopyStatus('idle'), 2000);
     } catch (err) {
       console.error('Failed to copy:', err);
+      setCopyStatus('error');
+      setTimeout(() => setCopyStatus('idle'), 2000);
+    }
+  };
+
+  const handleClearComments = () => {
+    if (allComments.length === 0) return;
+
+    // Save current state to history before clearing
+    const historyEntry: CommentHistoryEntry = {
+      timestamp: new Date().toISOString(),
+      comments: allComments,
+      commentText: commentText
+    };
+
+    const newHistory = [historyEntry, ...commentHistory].slice(0, 20); // Keep last 20
+    setCommentHistory(newHistory);
+
+    // Save history to localStorage
+    const historyKey = getStorageKey('history');
+    if (historyKey) {
+      localStorage.setItem(historyKey, JSON.stringify(newHistory));
+    }
+
+    // Clear comments
+    setAllComments([]);
+    setCommentText('');
+  };
+
+  const handleRestoreHistory = (entry: CommentHistoryEntry) => {
+    setAllComments(entry.comments);
+    setShowHistory(false);
+  };
+
+  const handleDeleteHistoryEntry = (timestamp: string) => {
+    const newHistory = commentHistory.filter(h => h.timestamp !== timestamp);
+    setCommentHistory(newHistory);
+
+    const historyKey = getStorageKey('history');
+    if (historyKey) {
+      localStorage.setItem(historyKey, JSON.stringify(newHistory));
     }
   };
 
@@ -286,7 +406,9 @@ const App: React.FC = () => {
           disabled={!commentText.trim()}
           style={{
             padding: '8px 16px',
-            backgroundColor: !commentText.trim() ? '#e9ecef' : '#28a745',
+            backgroundColor: copyStatus === 'copied' ? '#218838' :
+                           copyStatus === 'error' ? '#dc3545' :
+                           !commentText.trim() ? '#e9ecef' : '#28a745',
             color: '#ffffff',
             border: 'none',
             borderRadius: '4px',
@@ -296,13 +418,157 @@ const App: React.FC = () => {
             alignItems: 'center',
             gap: '6px',
             fontWeight: '500',
-            opacity: !commentText.trim() ? 0.5 : 1
+            opacity: !commentText.trim() ? 0.5 : 1,
+            transition: 'background-color 0.2s'
           }}
           title="Copy comments to clipboard"
         >
-          📋 Copy
+          {copyStatus === 'copied' ? '✓ Copied!' :
+           copyStatus === 'error' ? '✗ Error' :
+           '📋 Copy'}
         </button>
-        
+
+        {/* Clear comments button */}
+        <button
+          onClick={handleClearComments}
+          disabled={allComments.length === 0}
+          style={{
+            padding: '8px 16px',
+            backgroundColor: allComments.length === 0 ? '#e9ecef' : '#dc3545',
+            color: '#ffffff',
+            border: 'none',
+            borderRadius: '4px',
+            cursor: allComments.length === 0 ? 'not-allowed' : 'pointer',
+            fontSize: '14px',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '6px',
+            fontWeight: '500',
+            opacity: allComments.length === 0 ? 0.5 : 1
+          }}
+          title="Clear all comments (saves to history)"
+        >
+          🗑 Clear
+        </button>
+
+        {/* History button */}
+        <div ref={historyDropdownRef} style={{ position: 'relative' }}>
+          <button
+            onClick={() => setShowHistory(!showHistory)}
+            disabled={commentHistory.length === 0}
+            style={{
+              padding: '8px 16px',
+              backgroundColor: showHistory ? '#6c757d' : '#ffffff',
+              color: showHistory ? '#ffffff' : '#495057',
+              border: '1px solid #6c757d',
+              borderRadius: '4px',
+              cursor: commentHistory.length === 0 ? 'not-allowed' : 'pointer',
+              fontSize: '14px',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+              fontWeight: '500',
+              opacity: commentHistory.length === 0 ? 0.5 : 1
+            }}
+            title="View comment history"
+          >
+            📜 History ({commentHistory.length})
+          </button>
+
+          {/* History dropdown */}
+          {showHistory && commentHistory.length > 0 && (
+            <div style={{
+              position: 'absolute',
+              top: '100%',
+              right: 0,
+              marginTop: '4px',
+              width: '350px',
+              maxHeight: '400px',
+              overflowY: 'auto',
+              backgroundColor: '#ffffff',
+              border: '1px solid #dee2e6',
+              borderRadius: '8px',
+              boxShadow: '0 4px 12px rgba(0, 0, 0, 0.15)',
+              zIndex: 3000
+            }}>
+              <div style={{
+                padding: '12px 16px',
+                borderBottom: '1px solid #dee2e6',
+                backgroundColor: '#f8f9fa',
+                borderRadius: '8px 8px 0 0',
+                fontWeight: '600',
+                fontSize: '14px'
+              }}>
+                Comment History
+              </div>
+              {commentHistory.map((entry) => (
+                <div
+                  key={entry.timestamp}
+                  style={{
+                    padding: '12px 16px',
+                    borderBottom: '1px solid #f0f0f0',
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'flex-start',
+                    gap: '12px'
+                  }}
+                >
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: '12px', color: '#6c757d', marginBottom: '4px' }}>
+                      {new Date(entry.timestamp).toLocaleString()}
+                    </div>
+                    <div style={{ fontSize: '13px', color: '#495057' }}>
+                      {entry.comments.length} comment{entry.comments.length !== 1 ? 's' : ''}
+                    </div>
+                    <div style={{
+                      fontSize: '12px',
+                      color: '#868e96',
+                      marginTop: '4px',
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                      whiteSpace: 'nowrap'
+                    }}>
+                      {entry.commentText.slice(0, 60)}{entry.commentText.length > 60 ? '...' : ''}
+                    </div>
+                  </div>
+                  <div style={{ display: 'flex', gap: '8px', flexShrink: 0 }}>
+                    <button
+                      onClick={() => handleRestoreHistory(entry)}
+                      style={{
+                        padding: '4px 8px',
+                        backgroundColor: '#007bff',
+                        color: '#ffffff',
+                        border: 'none',
+                        borderRadius: '4px',
+                        cursor: 'pointer',
+                        fontSize: '12px'
+                      }}
+                      title="Restore these comments"
+                    >
+                      Restore
+                    </button>
+                    <button
+                      onClick={() => handleDeleteHistoryEntry(entry.timestamp)}
+                      style={{
+                        padding: '4px 8px',
+                        backgroundColor: '#dc3545',
+                        color: '#ffffff',
+                        border: 'none',
+                        borderRadius: '4px',
+                        cursor: 'pointer',
+                        fontSize: '12px'
+                      }}
+                      title="Delete this history entry"
+                    >
+                      ✕
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
         {/* Save status indicator */}
         {saveStatus !== 'idle' && (
           <div style={{

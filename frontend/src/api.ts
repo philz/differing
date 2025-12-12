@@ -3,7 +3,19 @@ import { DiffInfo, FileInfo, FileDiff } from './types';
 // Use relative API calls when served from same origin, or full URL for dev mode
 const API_BASE = window.location.port === '3000' ? 'http://localhost:8080/api' : '/api';
 
+export interface RepoInfo {
+  path: string;
+}
+
 export class DiffAPI {
+  static async getRepoInfo(): Promise<RepoInfo> {
+    const response = await fetch(`${API_BASE}/repo-info`);
+    if (!response.ok) {
+      throw new Error('Failed to fetch repo info');
+    }
+    return response.json();
+  }
+
   static async getDiffs(): Promise<DiffInfo[]> {
     const response = await fetch(`${API_BASE}/diffs`);
     if (!response.ok) {
