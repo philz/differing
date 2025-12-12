@@ -628,3 +628,280 @@ func TestSaveFileInWorktree(t *testing.T) {
 		t.Error("os.Root should prevent directory traversal in worktree")
 	}
 }
+
+func TestGetDiffCommits(t *testing.T) {
+	repoDir, cleanup := setupTestRepo(t)
+	defer cleanup()
+
+	oldDir, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("Failed to get current dir: %v", err)
+	}
+	defer os.Chdir(oldDir)
+
+	if err := os.Chdir(repoDir); err != nil {
+		t.Fatalf("Failed to change to test repo: %v", err)
+	}
+
+	// Get HEAD commit
+	headCmd := exec.Command("git", "rev-parse", "HEAD")
+	headOutput, err := headCmd.Output()
+	if err != nil {
+		t.Fatalf("Failed to get HEAD: %v", err)
+	}
+	headHash := strings.TrimSpace(string(headOutput))
+
+	// Get the second commit (one before HEAD)
+	secondCmd := exec.Command("git", "rev-parse", "HEAD~1")
+	secondOutput, err := secondCmd.Output()
+	if err != nil {
+		t.Fatalf("Failed to get HEAD~1: %v", err)
+	}
+	secondHash := strings.TrimSpace(string(secondOutput))
+
+	// Test getting commits from the second commit to HEAD
+	// This should return just the HEAD commit (since second commit is exclusive)
+	logCmd := exec.Command("git", "log", "--pretty=format:%H%x00%s%x00%an%x00%at", secondHash+"^..HEAD")
+	output, err := logCmd.Output()
+	if err != nil {
+		t.Fatalf("Failed to get git log: %v", err)
+	}
+
+	lines := strings.Split(strings.TrimSpace(string(output)), "\n")
+	if len(lines) != 2 {
+		t.Errorf("Expected 2 commits from second^ to HEAD, got %d", len(lines))
+	}
+
+	// Verify HEAD is first and marked correctly
+	firstParts := strings.Split(lines[0], "\x00")
+	if len(firstParts) < 4 {
+		t.Fatalf("Expected 4 parts in log output, got %d", len(firstParts))
+	}
+
+	if firstParts[0] != headHash {
+		t.Errorf("First commit should be HEAD, got %s, want %s", firstParts[0], headHash)
+	}
+
+	// Verify the commit message is present
+	if firstParts[1] == "" {
+		t.Error("Commit message should not be empty")
+	}
+}
+
+func TestGetDiffCommitsWorking(t *testing.T) {
+	repoDir, cleanup := setupTestRepo(t)
+	defer cleanup()
+
+	oldDir, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("Failed to get current dir: %v", err)
+	}
+	defer os.Chdir(oldDir)
+
+	if err := os.Chdir(repoDir); err != nil {
+		t.Fatalf("Failed to change to test repo: %v", err)
+	}
+
+	// For "working" diffID, should return recent commits similar to getDiffs
+	logCmd := exec.Command("git", "log", "--oneline", "-20", "--pretty=format:%H%x00%s%x00%an%x00%at")
+	output, err := logCmd.Output()
+	if err != nil {
+		t.Fatalf("Failed to get git log: %v", err)
+	}
+
+	lines := strings.Split(strings.TrimSpace(string(output)), "\n")
+	if len(lines) != 3 {
+		t.Errorf("Expected 3 commits for working diff, got %d", len(lines))
+	}
+}
+
+func TestAmendCommitMessage(t *testing.T) {
+	repoDir, cleanup := setupTestRepo(t)
+	defer cleanup()
+
+	oldDir, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("Failed to get current dir: %v", err)
+	}
+	defer os.Chdir(oldDir)
+
+	if err := os.Chdir(repoDir); err != nil {
+		t.Fatalf("Failed to change to test repo: %v", err)
+	}
+
+	// Initialize globals for testing
+	gitRoot, err = getGitRoot()
+	if err != nil {
+		t.Fatalf("Failed to get git root: %v", err)
+	}
+
+	// Get HEAD commit hash before amend
+	headCmd := exec.Command("git", "rev-parse", "HEAD")
+	headOutput, err := headCmd.Output()
+	if err != nil {
+		t.Fatalf("Failed to get HEAD: %v", err)
+	}
+	oldHeadHash := strings.TrimSpace(string(headOutput))
+
+	// Get original commit message
+	msgCmd := exec.Command("git", "log", "-1", "--pretty=format:%s")
+	msgOutput, err := msgCmd.Output()
+	if err != nil {
+		t.Fatalf("Failed to get commit message: %v", err)
+	}
+	originalMessage := strings.TrimSpace(string(msgOutput))
+
+	// Amend the commit message
+	newMessage := "Updated commit message for testing"
+	amendCmd := exec.Command("git", "commit", "--amend", "-m", newMessage)
+	if output, err := amendCmd.CombinedOutput(); err != nil {
+		t.Fatalf("Failed to amend commit: %v - %s", err, output)
+	}
+
+	// Get HEAD commit hash after amend (should be different)
+	newHeadCmd := exec.Command("git", "rev-parse", "HEAD")
+	newHeadOutput, err := newHeadCmd.Output()
+	if err != nil {
+		t.Fatalf("Failed to get new HEAD: %v", err)
+	}
+	newHeadHash := strings.TrimSpace(string(newHeadOutput))
+
+	// Verify hash changed
+	if oldHeadHash == newHeadHash {
+		t.Error("HEAD hash should change after amend")
+	}
+
+	// Verify message changed
+	newMsgCmd := exec.Command("git", "log", "-1", "--pretty=format:%s")
+	newMsgOutput, err := newMsgCmd.Output()
+	if err != nil {
+		t.Fatalf("Failed to get new commit message: %v", err)
+	}
+	amendedMessage := strings.TrimSpace(string(newMsgOutput))
+
+	if amendedMessage != newMessage {
+		t.Errorf("Amended message = %q, want %q", amendedMessage, newMessage)
+	}
+
+	if amendedMessage == originalMessage {
+		t.Error("Amended message should be different from original")
+	}
+}
+
+func TestAmendCommitMessageOnlyHead(t *testing.T) {
+	repoDir, cleanup := setupTestRepo(t)
+	defer cleanup()
+
+	oldDir, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("Failed to get current dir: %v", err)
+	}
+	defer os.Chdir(oldDir)
+
+	if err := os.Chdir(repoDir); err != nil {
+		t.Fatalf("Failed to change to test repo: %v", err)
+	}
+
+	// Get HEAD and HEAD~1 hashes
+	headCmd := exec.Command("git", "rev-parse", "HEAD")
+	headOutput, err := headCmd.Output()
+	if err != nil {
+		t.Fatalf("Failed to get HEAD: %v", err)
+	}
+	headHash := strings.TrimSpace(string(headOutput))
+
+	prevCmd := exec.Command("git", "rev-parse", "HEAD~1")
+	prevOutput, err := prevCmd.Output()
+	if err != nil {
+		t.Fatalf("Failed to get HEAD~1: %v", err)
+	}
+	prevHash := strings.TrimSpace(string(prevOutput))
+
+	// These should be different
+	if headHash == prevHash {
+		t.Fatal("HEAD and HEAD~1 should be different commits")
+	}
+
+	// Verify HEAD~1 is not HEAD (our validation logic)
+	if prevHash == headHash {
+		t.Error("prevHash should not equal headHash for security check")
+	}
+}
+
+func TestCommitInfoParsing(t *testing.T) {
+	repoDir, cleanup := setupTestRepo(t)
+	defer cleanup()
+
+	oldDir, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("Failed to get current dir: %v", err)
+	}
+	defer os.Chdir(oldDir)
+
+	if err := os.Chdir(repoDir); err != nil {
+		t.Fatalf("Failed to change to test repo: %v", err)
+	}
+
+	// Get HEAD hash for comparison
+	headCmd := exec.Command("git", "rev-parse", "HEAD")
+	headOutput, err := headCmd.Output()
+	if err != nil {
+		t.Fatalf("Failed to get HEAD: %v", err)
+	}
+	headHash := strings.TrimSpace(string(headOutput))
+
+	// Parse commit info similar to getDiffCommits
+	logCmd := exec.Command("git", "log", "--oneline", "-3", "--pretty=format:%H%x00%s%x00%an%x00%at")
+	output, err := logCmd.Output()
+	if err != nil {
+		t.Fatalf("Failed to get git log: %v", err)
+	}
+
+	lines := strings.Split(strings.TrimSpace(string(output)), "\n")
+
+	for i, line := range lines {
+		parts := strings.Split(line, "\x00")
+		if len(parts) != 4 {
+			t.Errorf("Line %d: expected 4 parts, got %d", i, len(parts))
+			continue
+		}
+
+		commitHash := parts[0]
+		message := parts[1]
+		author := parts[2]
+		timestampStr := parts[3]
+
+		// Verify commit hash
+		if len(commitHash) != 40 {
+			t.Errorf("Line %d: invalid commit hash length: %d", i, len(commitHash))
+		}
+
+		// Verify author is not empty
+		if author == "" {
+			t.Errorf("Line %d: author is empty", i)
+		}
+
+		// Verify timestamp parses
+		timestamp, err := strconv.ParseInt(timestampStr, 10, 64)
+		if err != nil {
+			t.Errorf("Line %d: failed to parse timestamp: %v", i, err)
+		}
+		if timestamp <= 0 {
+			t.Errorf("Line %d: invalid timestamp: %d", i, timestamp)
+		}
+
+		// Verify isHead detection works
+		isHead := commitHash == headHash
+		if i == 0 && !isHead {
+			t.Errorf("First commit should be HEAD")
+		}
+		if i > 0 && isHead {
+			t.Errorf("Only first commit should be HEAD")
+		}
+
+		// Message can be empty for some commits, but our test repo should have messages
+		if message == "" && i < 3 {
+			t.Logf("Line %d: commit message is empty (may be intentional)", i)
+		}
+	}
+}

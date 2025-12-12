@@ -34,3 +34,11 @@ export interface Comment {
   filePath: string;      // File this comment belongs to
   diffId: string;        // Diff this comment belongs to
 }
+
+export interface CommitInfo {
+  id: string;
+  message: string;
+  author: string;
+  timestamp: string;
+  isHead: boolean; // True if this is the HEAD commit (can be amended)
+}
