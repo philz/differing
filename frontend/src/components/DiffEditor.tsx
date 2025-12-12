@@ -29,13 +29,17 @@ interface DiffEditorProps {
   comments: Comment[];
   onContentChange: (content: string) => void;
   onAddComment: (line: number, side: 'left' | 'right', text: string, selectedText?: string, startLine?: number, endLine?: number) => void;
+  onNextFile?: () => void;
+  onPreviousFile?: () => void;
 }
 
 const DiffEditor = forwardRef<DiffEditorHandle, DiffEditorProps>(({
   fileDiff,
   comments,
   onContentChange,
-  onAddComment
+  onAddComment,
+  onNextFile,
+  onPreviousFile
 }, ref) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const editorRef = useRef<monaco.editor.IStandaloneDiffEditor | null>(null);
@@ -87,7 +91,6 @@ const DiffEditor = forwardRef<DiffEditorHandle, DiffEditorProps>(({
 
       modifiedEditor.revealLineInCenter(targetLine);
       modifiedEditor.setPosition({ lineNumber: targetLine, column: 1 });
-      modifiedEditor.focus();
     },
     goToPreviousChange: () => {
       const editor = editorRef.current;
@@ -121,7 +124,6 @@ const DiffEditor = forwardRef<DiffEditorHandle, DiffEditorProps>(({
 
       modifiedEditor.revealLineInCenter(targetLine);
       modifiedEditor.setPosition({ lineNumber: targetLine, column: 1 });
-      modifiedEditor.focus();
     }
   }), []);
 
@@ -176,13 +178,94 @@ const DiffEditor = forwardRef<DiffEditorHandle, DiffEditorProps>(({
 
     // Listen for content changes on the modified editor
     const modifiedEditor = diffEditor.getModifiedEditor();
+    const originalEditor = diffEditor.getOriginalEditor();
+
+    // Add keybindings to both editors to prevent Monaco from intercepting our shortcuts
+    const addKeybindings = (editor: monaco.editor.IStandaloneCodeEditor) => {
+      // Ctrl+N: next change (or next file if at end)
+      editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyN, () => {
+        const lineChanges = diffEditor.getLineChanges();
+
+        // No changes in file - go to next file
+        if (!lineChanges || lineChanges.length === 0) {
+          onNextFile?.();
+          return;
+        }
+
+        const currentLine = modifiedEditor.getPosition()?.lineNumber ?? 0;
+
+        // Find the next change after current position
+        let foundNext = false;
+        for (let i = 0; i < lineChanges.length; i++) {
+          const change = lineChanges[i];
+          const changeLine = change.modifiedStartLineNumber || change.originalStartLineNumber;
+          if (changeLine > currentLine) {
+            currentChangeIndexRef.current = i;
+            const targetLine = change.modifiedStartLineNumber || change.originalStartLineNumber;
+            modifiedEditor.revealLineInCenter(targetLine);
+            modifiedEditor.setPosition({ lineNumber: targetLine, column: 1 });
+            foundNext = true;
+            break;
+          }
+        }
+
+        // No more changes after current position - go to next file
+        if (!foundNext) {
+          onNextFile?.();
+        }
+      });
+
+      // Ctrl+P: previous change (or previous file if at start)
+      editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyP, () => {
+        const lineChanges = diffEditor.getLineChanges();
+
+        // No changes in file - go to previous file
+        if (!lineChanges || lineChanges.length === 0) {
+          onPreviousFile?.();
+          return;
+        }
+
+        const currentLine = modifiedEditor.getPosition()?.lineNumber ?? Infinity;
+
+        // Find the previous change before current position
+        let foundPrev = false;
+        for (let i = lineChanges.length - 1; i >= 0; i--) {
+          const change = lineChanges[i];
+          const changeLine = change.modifiedStartLineNumber || change.originalStartLineNumber;
+          if (changeLine < currentLine) {
+            currentChangeIndexRef.current = i;
+            const targetLine = change.modifiedStartLineNumber || change.originalStartLineNumber;
+            modifiedEditor.revealLineInCenter(targetLine);
+            modifiedEditor.setPosition({ lineNumber: targetLine, column: 1 });
+            foundPrev = true;
+            break;
+          }
+        }
+
+        // No more changes before current position - go to previous file
+        if (!foundPrev) {
+          onPreviousFile?.();
+        }
+      });
+
+      // Ctrl+J: next file
+      editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyJ, () => {
+        onNextFile?.();
+      });
+
+      // Ctrl+K: previous file
+      editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyK, () => {
+        onPreviousFile?.();
+      });
+    };
+
+    addKeybindings(modifiedEditor);
+    addKeybindings(originalEditor);
     modifiedEditor.onDidChangeModelContent(() => {
       const content = modifiedEditor.getValue();
       onContentChange(content);
     });
 
-    const originalEditor = diffEditor.getOriginalEditor();
-    
     // Helper function to clear all visible glyphs
     const clearAllVisibleGlyphs = () => {
       visibleGlyphsRef.current.forEach((glyphId) => {

@@ -655,6 +655,8 @@ const App: React.FC = () => {
               comments={currentFileComments}
               onContentChange={handleContentChange}
               onAddComment={handleAddComment}
+              onNextFile={goToNextFile}
+              onPreviousFile={goToPreviousFile}
             />
           </div>
         )}
