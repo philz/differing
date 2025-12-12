@@ -569,31 +569,6 @@ const App: React.FC = () => {
           )}
         </div>
 
-        {/* Save status indicator */}
-        {saveStatus !== 'idle' && (
-          <div style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: '8px',
-            padding: '4px 8px',
-            borderRadius: '4px',
-            fontSize: '14px',
-            whiteSpace: 'nowrap',
-            backgroundColor: saveStatus === 'saving' ? '#e3f2fd' : 
-                           saveStatus === 'saved' ? '#e8f5e8' : '#ffeaa7',
-            color: saveStatus === 'saving' ? '#1976d2' : 
-                   saveStatus === 'saved' ? '#2e7d32' : '#d68910',
-            border: `1px solid ${
-              saveStatus === 'saving' ? '#bbdefb' : 
-              saveStatus === 'saved' ? '#c8e6c9' : '#f9ca24'
-            }`
-          }}>
-            {saveStatus === 'saving' && '💾 Saving...'}
-            {saveStatus === 'saved' && '✅ Saved'}
-            {saveStatus === 'error' && '❌ Error saving'}
-          </div>
-        )}
-
       </div>
 
       {/* Error banner - separate row if needed */}
@@ -670,6 +645,33 @@ const App: React.FC = () => {
           onCommentTextChange={setCommentText}
         />
       </div>
+
+      {/* Save status toast */}
+      {saveStatus !== 'idle' && (
+        <div style={{
+          position: 'fixed',
+          bottom: '24px',
+          right: '24px',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '8px',
+          padding: '12px 16px',
+          borderRadius: '8px',
+          fontSize: '14px',
+          fontWeight: '500',
+          whiteSpace: 'nowrap',
+          backgroundColor: saveStatus === 'saving' ? '#1976d2' :
+                         saveStatus === 'saved' ? '#2e7d32' : '#d32f2f',
+          color: '#ffffff',
+          boxShadow: '0 4px 12px rgba(0, 0, 0, 0.15)',
+          zIndex: 9999,
+          transition: 'opacity 0.2s ease-in-out'
+        }}>
+          {saveStatus === 'saving' && '💾 Saving...'}
+          {saveStatus === 'saved' && '✅ Saved'}
+          {saveStatus === 'error' && '❌ Error saving'}
+        </div>
+      )}
     </div>
   );
 };
