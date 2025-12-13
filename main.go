@@ -68,6 +68,7 @@ func main() {
 		port = flag.String("port", "3844", "listen port")
 		open = flag.Bool("open", false, "automatically open web browser")
 	)
+	flag.StringVar(port, "p", "3844", "listen port (shorthand)")
 	flag.Parse()
 
 	// Check if we're in a git repository and get the root
