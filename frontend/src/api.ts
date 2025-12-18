@@ -1,4 +1,4 @@
-import { DiffInfo, FileInfo, FileDiff, CommitInfo } from './types';
+import { DiffInfo, FileInfo, FileDiff } from './types';
 
 // Use relative API calls when served from same origin, or full URL for dev mode
 const API_BASE = window.location.port === '3000' ? 'http://localhost:8080/api' : '/api';
@@ -51,28 +51,5 @@ export class DiffAPI {
     if (!response.ok) {
       throw new Error('Failed to save file');
     }
-  }
-
-  static async getDiffCommits(diffId: string): Promise<CommitInfo[]> {
-    const response = await fetch(`${API_BASE}/diffs/${diffId}/commits`);
-    if (!response.ok) {
-      throw new Error('Failed to fetch diff commits');
-    }
-    return response.json();
-  }
-
-  static async amendCommitMessage(commitId: string, message: string): Promise<{ message: string; newCommit: string; warning?: string }> {
-    const response = await fetch(`${API_BASE}/commit/${commitId}/amend-message`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ message }),
-    });
-    if (!response.ok) {
-      const error = await response.json();
-      throw new Error(error.error || 'Failed to amend commit message');
-    }
-    return response.json();
   }
 }

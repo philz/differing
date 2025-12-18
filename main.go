@@ -52,15 +52,6 @@ type FileDiff struct {
 	NewContent string `json:"newContent"`
 }
 
-// CommitInfo represents a commit in the range from base commit to HEAD
-type CommitInfo struct {
-	ID        string    `json:"id"`
-	Message   string    `json:"message"`
-	Author    string    `json:"author"`
-	Timestamp time.Time `json:"timestamp"`
-	IsHead    bool      `json:"isHead"` // True if this is the HEAD commit (can be amended)
-}
-
 func main() {
 	// Parse command-line flags
 	var (
@@ -96,10 +87,8 @@ func main() {
 		api.GET("/repo-info", getRepoInfo)
 		api.GET("/diffs", getDiffs)
 		api.GET("/diffs/:id/files", getDiffFiles)
-		api.GET("/diffs/:id/commits", getDiffCommits)
 		api.GET("/file-diff/:id/*filepath", getFileDiff)
 		api.POST("/file-save/:id/*filepath", saveFile)
-		api.POST("/commit/:id/amend-message", amendCommitMessage)
 	}
 
 	// Serve embedded frontend files
@@ -465,140 +454,4 @@ func saveFile(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{"message": "File saved successfully", "path": filePath})
-}
-
-// getDiffCommits returns all commits from the selected base commit (exclusive) to HEAD (inclusive)
-// For "working" diff, returns commits from HEAD~20 to HEAD
-func getDiffCommits(c *gin.Context) {
-	diffID := c.Param("id")
-
-	var commits []CommitInfo
-
-	// Get HEAD commit hash
-	headCmd := exec.Command("git", "rev-parse", "HEAD")
-	headCmd.Dir = gitRoot
-	headOutput, err := headCmd.Output()
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get HEAD"})
-		return
-	}
-	headHash := strings.TrimSpace(string(headOutput))
-
-	var logCmd *exec.Cmd
-	if diffID == "working" {
-		// For working changes, show recent commits (similar to getDiffs)
-		logCmd = exec.Command("git", "log", "--oneline", "-20", "--pretty=format:%H%x00%s%x00%an%x00%at")
-	} else {
-		// Get commits from base commit (exclusive) to HEAD (inclusive)
-		// Use diffID^..HEAD to exclude the base commit itself
-		logCmd = exec.Command("git", "log", "--pretty=format:%H%x00%s%x00%an%x00%at", diffID+"^..HEAD")
-	}
-	logCmd.Dir = gitRoot
-
-	output, err := logCmd.Output()
-	if err != nil {
-		// If the range fails (e.g., initial commit), just return HEAD
-		logCmd = exec.Command("git", "log", "--oneline", "-1", "--pretty=format:%H%x00%s%x00%an%x00%at")
-		logCmd.Dir = gitRoot
-		output, err = logCmd.Output()
-		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get commits"})
-			return
-		}
-	}
-
-	lines := strings.Split(strings.TrimSpace(string(output)), "\n")
-	for _, line := range lines {
-		if line == "" {
-			continue
-		}
-		parts := strings.Split(line, "\x00")
-		if len(parts) < 4 {
-			continue
-		}
-
-		timestamp, _ := strconv.ParseInt(parts[3], 10, 64)
-
-		commits = append(commits, CommitInfo{
-			ID:        parts[0],
-			Message:   parts[1],
-			Author:    parts[2],
-			Timestamp: time.Unix(timestamp, 0),
-			IsHead:    parts[0] == headHash,
-		})
-	}
-
-	c.JSON(http.StatusOK, commits)
-}
-
-// amendCommitMessage amends the commit message of HEAD
-// Only allowed if the specified commit ID matches HEAD
-func amendCommitMessage(c *gin.Context) {
-	commitID := c.Param("id")
-
-	var req struct {
-		Message string `json:"message"`
-	}
-
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request"})
-		return
-	}
-
-	if strings.TrimSpace(req.Message) == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Commit message cannot be empty"})
-		return
-	}
-
-	// Get HEAD commit hash
-	headCmd := exec.Command("git", "rev-parse", "HEAD")
-	headCmd.Dir = gitRoot
-	headOutput, err := headCmd.Output()
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get HEAD"})
-		return
-	}
-	headHash := strings.TrimSpace(string(headOutput))
-
-	// Only allow amending HEAD
-	if commitID != headHash {
-		c.JSON(http.StatusForbidden, gin.H{"error": "Can only amend the HEAD commit"})
-		return
-	}
-
-	// Check if HEAD has been pushed (warn but don't block)
-	// This is informational - the actual amend will proceed
-	isPushed := false
-	checkCmd := exec.Command("git", "branch", "-r", "--contains", headHash)
-	checkCmd.Dir = gitRoot
-	if checkOutput, err := checkCmd.Output(); err == nil && len(checkOutput) > 0 {
-		isPushed = true
-	}
-
-	// Perform the amend
-	amendCmd := exec.Command("git", "commit", "--amend", "-m", req.Message)
-	amendCmd.Dir = gitRoot
-	if output, err := amendCmd.CombinedOutput(); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"error":  "Failed to amend commit",
-			"detail": string(output),
-		})
-		return
-	}
-
-	// Get new HEAD hash after amend
-	newHeadCmd := exec.Command("git", "rev-parse", "HEAD")
-	newHeadCmd.Dir = gitRoot
-	newHeadOutput, _ := newHeadCmd.Output()
-	newHeadHash := strings.TrimSpace(string(newHeadOutput))
-
-	response := gin.H{
-		"message":   "Commit message amended successfully",
-		"newCommit": newHeadHash,
-	}
-	if isPushed {
-		response["warning"] = "This commit may have been pushed to a remote. You may need to force push."
-	}
-
-	c.JSON(http.StatusOK, response)
 }

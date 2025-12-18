@@ -1,9 +1,8 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { DiffInfo, FileInfo, FileDiff, Comment, CommitInfo } from './types';
+import { DiffInfo, FileInfo, FileDiff, Comment } from './types';
 import { DiffAPI } from './api';
 import DiffChooser from './components/DiffChooser';
 import FileChooser from './components/FileChooser';
-import CommitMessages from './components/CommitMessages';
 import DiffEditor from './components/DiffEditor';
 import FloatingCommentPanel from './components/FloatingCommentPanel';
 
@@ -24,13 +23,11 @@ const App: React.FC = () => {
   const [files, setFiles] = useState<FileInfo[]>([]);
   const [selectedFile, setSelectedFile] = useState<string | null>(null);
   const [fileDiff, setFileDiff] = useState<FileDiff | null>(null);
-  const [commits, setCommits] = useState<CommitInfo[]>([]);
   const [allComments, setAllComments] = useState<Comment[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   // const [saving, setSaving] = useState(false);
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
-  const [commitSaveStatus, setCommitSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
   const [showCommentPanel, setShowCommentPanel] = useState(false);
   const [commentText, setCommentText] = useState('');
   const [repoPath, setRepoPath] = useState<string | null>(null);
@@ -101,11 +98,10 @@ const App: React.FC = () => {
     }
   }, [allComments, repoPath]);
 
-  // Load files and commits when diff is selected
+  // Load files when diff is selected
   useEffect(() => {
     if (selectedDiff) {
       loadFiles(selectedDiff);
-      loadCommits(selectedDiff);
       setSelectedFile(null);
       setFileDiff(null);
     }
@@ -183,41 +179,6 @@ const App: React.FC = () => {
       setError(`Failed to load file diff: ${err}`);
     } finally {
       setLoading(false);
-    }
-  };
-
-  const loadCommits = async (diffId: string) => {
-    try {
-      const commitsData = await DiffAPI.getDiffCommits(diffId);
-      setCommits(commitsData || []);
-    } catch (err) {
-      console.error('Failed to load commits:', err);
-      setCommits([]);
-    }
-  };
-
-  const handleAmendCommitMessage = async (commitId: string, message: string) => {
-    try {
-      setCommitSaveStatus('saving');
-      const result = await DiffAPI.amendCommitMessage(commitId, message);
-      setCommitSaveStatus('saved');
-      setTimeout(() => setCommitSaveStatus('idle'), 2000);
-
-      // Reload diffs and commits to get updated data
-      await loadDiffs();
-      if (selectedDiff) {
-        await loadCommits(selectedDiff);
-      }
-
-      if (result.warning) {
-        console.warn(result.warning);
-      }
-    } catch (err) {
-      console.error('Failed to amend commit:', err);
-      setCommitSaveStatus('error');
-      setError(`Failed to amend commit: ${err}`);
-      setTimeout(() => setCommitSaveStatus('idle'), 3000);
-      throw err;
     }
   };
 
@@ -624,21 +585,6 @@ const App: React.FC = () => {
         </div>
       )}
 
-      {/* Commits panel - shown when a diff is selected */}
-      {selectedDiff && commits.length > 0 && (
-        <div style={{
-          padding: '8px 16px',
-          backgroundColor: '#f8f9fa',
-          borderBottom: '1px solid #e5e5e5'
-        }}>
-          <CommitMessages
-            commits={commits}
-            onAmendMessage={handleAmendCommitMessage}
-            saveStatus={commitSaveStatus}
-          />
-        </div>
-      )}
-
       {/* Main content area */}
       <div style={{
         flex: 1,
@@ -658,7 +604,7 @@ const App: React.FC = () => {
             Loading...
           </div>
         )}
-
+        
         {!loading && !fileDiff && (
           <div style={{
             flex: 1,
