@@ -56,6 +56,14 @@ const DiffEditor = forwardRef<DiffEditorHandle, DiffEditorProps>(({
   const currentHoveredLineRef = useRef<{left: number | null, right: number | null}>({left: null, right: null});
   const visibleGlyphsRef = useRef<Set<string>>(new Set());
   const currentChangeIndexRef = useRef<number>(-1);
+  const onNextFileRef = useRef(onNextFile);
+  const onPreviousFileRef = useRef(onPreviousFile);
+
+  // Keep refs up to date
+  useEffect(() => {
+    onNextFileRef.current = onNextFile;
+    onPreviousFileRef.current = onPreviousFile;
+  }, [onNextFile, onPreviousFile]);
 
   // Expose navigation methods to parent
   useImperativeHandle(ref, () => ({
@@ -188,7 +196,7 @@ const DiffEditor = forwardRef<DiffEditorHandle, DiffEditorProps>(({
 
         // No changes in file - go to next file
         if (!lineChanges || lineChanges.length === 0) {
-          onNextFile?.();
+          onNextFileRef.current?.();
           return;
         }
 
@@ -211,7 +219,7 @@ const DiffEditor = forwardRef<DiffEditorHandle, DiffEditorProps>(({
 
         // No more changes after current position - go to next file
         if (!foundNext) {
-          onNextFile?.();
+          onNextFileRef.current?.();
         }
       });
 
@@ -221,7 +229,7 @@ const DiffEditor = forwardRef<DiffEditorHandle, DiffEditorProps>(({
 
         // No changes in file - go to previous file
         if (!lineChanges || lineChanges.length === 0) {
-          onPreviousFile?.();
+          onPreviousFileRef.current?.();
           return;
         }
 
@@ -244,18 +252,18 @@ const DiffEditor = forwardRef<DiffEditorHandle, DiffEditorProps>(({
 
         // No more changes before current position - go to previous file
         if (!foundPrev) {
-          onPreviousFile?.();
+          onPreviousFileRef.current?.();
         }
       });
 
       // Ctrl+J: next file
       editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyJ, () => {
-        onNextFile?.();
+        onNextFileRef.current?.();
       });
 
       // Ctrl+K: previous file
       editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyK, () => {
-        onPreviousFile?.();
+        onPreviousFileRef.current?.();
       });
     };
 
