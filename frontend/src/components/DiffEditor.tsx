@@ -537,7 +537,7 @@ const DiffEditor = forwardRef<DiffEditorHandle, DiffEditorProps>(({
           style={{
             position: 'fixed',
             left: showCommentDialog.x - 200,
-            top: showCommentDialog.y,
+            top: Math.min(showCommentDialog.y, window.innerHeight - 350),
             width: '500px',
             backgroundColor: '#ffffff',
             border: '1px solid #ced4da',

@@ -81,27 +81,27 @@ const FloatingCommentPanel: React.FC<FloatingCommentPanelProps> = ({
     }, {} as Record<string, Comment[]>);
 
     const text = Object.entries(commentsByFile).map(([filePath, fileComments]: [string, Comment[]]) => {
-      const fileSection = fileComments.map((comment: Comment, index: number) => {
-        let result = `[${index + 1}] `;
-        
-        if (comment.startLine && comment.endLine && comment.startLine !== comment.endLine) {
-          result += `Lines ${comment.startLine}-${comment.endLine}`;
-        } else {
-          result += `Line ${comment.line}`;
-        }
+      const fileSection = fileComments.map((comment: Comment) => {
         const sideLabel = comment.side === 'left' ? 'old' : 'new';
-        result += ` (${sideLabel}):\n`;
-        
+        let result = `> ${filePath} (${sideLabel}):\n`;
+
+        // Add line-numbered code
         if (comment.selectedText) {
-          result += `\`\`\`\n${comment.selectedText}\n\`\`\`\n\n`;
+          const lines = comment.selectedText.split('\n');
+          const startLine = comment.startLine || comment.line;
+          lines.forEach((line, idx) => {
+            result += `${startLine + idx}: ${line}\n`;
+          });
+        } else {
+          result += `${comment.line}: (no code selected)\n`;
         }
-        
-        result += comment.text + '\n';
+
+        result += '\n' + comment.text + '\n';
         return result;
       }).join('\n---\n\n');
-      
-      return `## ${filePath}\n\n${fileSection}`;
-    }).join('\n\n═══════════════════════════════════════\n\n');
+
+      return fileSection;
+    }).join('\n---\n\n');
     
     setCommentText(text || 'No comments yet. Click on a line\'s glyph margin to add a comment.');
     onCommentTextChange(text);
