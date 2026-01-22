@@ -3,12 +3,13 @@ import { DiffInfo, FileInfo, FileDiff, Comment } from './types';
 import { DiffAPI } from './api';
 import DiffChooser from './components/DiffChooser';
 import FileChooser from './components/FileChooser';
-import DiffEditor from './components/DiffEditor';
+import DiffEditor, { ViewMode } from './components/DiffEditor';
 import FloatingCommentPanel from './components/FloatingCommentPanel';
 
 export interface DiffEditorHandle {
   goToNextChange: () => void;
   goToPreviousChange: () => void;
+  resetChangeIndex: () => void;
 }
 
 interface CommentHistoryEntry {
@@ -34,8 +35,33 @@ const App: React.FC = () => {
   const [copyStatus, setCopyStatus] = useState<'idle' | 'copied' | 'error'>('idle');
   const [commentHistory, setCommentHistory] = useState<CommentHistoryEntry[]>([]);
   const [showHistory, setShowHistory] = useState(false);
+  const [mode, setMode] = useState<ViewMode>('comment');
+  const [showKeyboardHint, setShowKeyboardHint] = useState(false);
+  const hasShownKeyboardHint = useRef(false);
   const diffEditorRef = useRef<DiffEditorHandle>(null);
   const historyDropdownRef = useRef<HTMLDivElement>(null);
+  const modeRef = useRef<ViewMode>(mode);
+
+  // Keep modeRef in sync
+  useEffect(() => {
+    modeRef.current = mode;
+  }, [mode]);
+
+  // Show keyboard hint toast on first file load
+  useEffect(() => {
+    if (fileDiff && !hasShownKeyboardHint.current) {
+      hasShownKeyboardHint.current = true;
+      setShowKeyboardHint(true);
+    }
+  }, [fileDiff]);
+
+  // Auto-hide keyboard hint after 6 seconds
+  useEffect(() => {
+    if (showKeyboardHint) {
+      const timer = setTimeout(() => setShowKeyboardHint(false), 6000);
+      return () => clearTimeout(timer);
+    }
+  }, [showKeyboardHint]);
 
   // Close history dropdown when clicking outside
   useEffect(() => {
@@ -278,26 +304,56 @@ const App: React.FC = () => {
 
   // File navigation functions
   const goToNextFile = useCallback(() => {
-    if (files.length === 0 || !selectedFile) return;
+    if (files.length === 0 || !selectedFile) return false;
     const currentIndex = files.findIndex(f => f.path === selectedFile);
     if (currentIndex < files.length - 1) {
       setSelectedFile(files[currentIndex + 1].path);
+      diffEditorRef.current?.resetChangeIndex();
+      return true;
     }
+    return false;
   }, [files, selectedFile]);
 
   const goToPreviousFile = useCallback(() => {
-    if (files.length === 0 || !selectedFile) return;
+    if (files.length === 0 || !selectedFile) return false;
     const currentIndex = files.findIndex(f => f.path === selectedFile);
     if (currentIndex > 0) {
       setSelectedFile(files[currentIndex - 1].path);
+      diffEditorRef.current?.resetChangeIndex();
+      return true;
     }
+    return false;
   }, [files, selectedFile]);
 
   // Keyboard shortcut handler
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      // Only handle Ctrl+key combinations
-      if (!e.ctrlKey) return;
+      // Comment mode navigation shortcuts (only when not in an input)
+      const isInputFocused = document.activeElement?.tagName === 'INPUT' ||
+                            document.activeElement?.tagName === 'TEXTAREA';
+
+      if (modeRef.current === 'comment' && !isInputFocused) {
+        if (e.key === '.') {
+          e.preventDefault();
+          diffEditorRef.current?.goToNextChange();
+          return;
+        } else if (e.key === ',') {
+          e.preventDefault();
+          diffEditorRef.current?.goToPreviousChange();
+          return;
+        } else if (e.key === '>') {
+          e.preventDefault();
+          goToNextFile();
+          return;
+        } else if (e.key === '<') {
+          e.preventDefault();
+          goToPreviousFile();
+          return;
+        }
+      }
+
+      // Ctrl+key combinations work in both modes
+      if (!e.ctrlKey && !e.metaKey) return;
 
       switch (e.key) {
         case 'k':
@@ -319,8 +375,9 @@ const App: React.FC = () => {
       }
     };
 
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
+    // Use capture phase to intercept events before Monaco editor handles them
+    window.addEventListener('keydown', handleKeyDown, true);
+    return () => window.removeEventListener('keydown', handleKeyDown, true);
   }, [goToNextFile, goToPreviousFile]);
 
   return (
@@ -356,7 +413,7 @@ const App: React.FC = () => {
             color: '#6c757d',
             fontFamily: 'monospace'
           }}>
-            ^j/k file &nbsp; ^n/p change
+            {mode === 'comment' ? '. , change  &lt; &gt; file' : '^j/k file  ^n/p change'}
           </div>
         </div>
 
@@ -377,7 +434,53 @@ const App: React.FC = () => {
             onSelectFile={setSelectedFile}
           />
         </div>
-        
+
+        {/* Mode toggle */}
+        <div style={{
+          display: 'flex',
+          border: '1px solid #ced4da',
+          borderRadius: '4px',
+          overflow: 'hidden'
+        }}>
+          <button
+            onClick={() => setMode('comment')}
+            style={{
+              padding: '8px 12px',
+              backgroundColor: mode === 'comment' ? '#007bff' : '#ffffff',
+              color: mode === 'comment' ? '#ffffff' : '#495057',
+              border: 'none',
+              cursor: 'pointer',
+              fontSize: '14px',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '4px',
+              transition: 'all 0.2s'
+            }}
+            title="Comment mode - click to add comments"
+          >
+            💬
+          </button>
+          <button
+            onClick={() => setMode('edit')}
+            style={{
+              padding: '8px 12px',
+              backgroundColor: mode === 'edit' ? '#007bff' : '#ffffff',
+              color: mode === 'edit' ? '#ffffff' : '#495057',
+              border: 'none',
+              borderLeft: '1px solid #ced4da',
+              cursor: 'pointer',
+              fontSize: '14px',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '4px',
+              transition: 'all 0.2s'
+            }}
+            title="Edit mode - make changes to the file"
+          >
+            ✏️
+          </button>
+        </div>
+
         {/* Comment panel toggle button */}
         <button
           onClick={() => setShowCommentPanel(!showCommentPanel)}
@@ -628,10 +731,13 @@ const App: React.FC = () => {
               ref={diffEditorRef}
               fileDiff={fileDiff}
               comments={currentFileComments}
+              mode={mode}
               onContentChange={handleContentChange}
               onAddComment={handleAddComment}
               onNextFile={goToNextFile}
               onPreviousFile={goToPreviousFile}
+              onNextChange={() => diffEditorRef.current?.goToNextChange()}
+              onPreviousChange={() => diffEditorRef.current?.goToPreviousChange()}
             />
           </div>
         )}
@@ -670,6 +776,30 @@ const App: React.FC = () => {
           {saveStatus === 'saving' && '💾 Saving...'}
           {saveStatus === 'saved' && '✅ Saved'}
           {saveStatus === 'error' && '❌ Error saving'}
+        </div>
+      )}
+
+      {/* Keyboard hint toast */}
+      {showKeyboardHint && (
+        <div style={{
+          position: 'fixed',
+          bottom: '24px',
+          left: '50%',
+          transform: 'translateX(-50%)',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '8px',
+          padding: '12px 16px',
+          borderRadius: '8px',
+          fontSize: '14px',
+          fontWeight: '500',
+          whiteSpace: 'nowrap',
+          backgroundColor: '#495057',
+          color: '#ffffff',
+          boxShadow: '0 4px 12px rgba(0, 0, 0, 0.15)',
+          zIndex: 9999
+        }}>
+          ⌨️ Use . , for next/prev change, &lt; &gt; for files
         </div>
       )}
     </div>

@@ -3,6 +3,8 @@ import * as monaco from 'monaco-editor';
 import { FileDiff, Comment } from '../types';
 import { DiffEditorHandle } from '../App';
 
+export type ViewMode = 'comment' | 'edit';
+
 let extensionToLanguageMap: Map<string, string> | null = null;
 
 function getLanguageFromPath(path: string): string {
@@ -27,19 +29,25 @@ function getLanguageFromPath(path: string): string {
 interface DiffEditorProps {
   fileDiff: FileDiff;
   comments: Comment[];
+  mode: ViewMode;
   onContentChange: (content: string) => void;
   onAddComment: (line: number, side: 'left' | 'right', text: string, selectedText?: string, startLine?: number, endLine?: number) => void;
   onNextFile?: () => void;
   onPreviousFile?: () => void;
+  onNextChange?: () => void;
+  onPreviousChange?: () => void;
 }
 
 const DiffEditor = forwardRef<DiffEditorHandle, DiffEditorProps>(({
   fileDiff,
   comments,
+  mode,
   onContentChange,
   onAddComment,
   onNextFile,
-  onPreviousFile
+  onPreviousFile,
+  onNextChange,
+  onPreviousChange
 }, ref) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const editorRef = useRef<monaco.editor.IStandaloneDiffEditor | null>(null);
@@ -58,12 +66,35 @@ const DiffEditor = forwardRef<DiffEditorHandle, DiffEditorProps>(({
   const currentChangeIndexRef = useRef<number>(-1);
   const onNextFileRef = useRef(onNextFile);
   const onPreviousFileRef = useRef(onPreviousFile);
+  const onNextChangeRef = useRef(onNextChange);
+  const onPreviousChangeRef = useRef(onPreviousChange);
+  const modeRef = useRef<ViewMode>(mode);
+  const hoverDecorationsRef = useRef<string[]>([]);
+
+  // Keep modeRef in sync with mode prop and update editor options
+  useEffect(() => {
+    modeRef.current = mode;
+    if (editorRef.current) {
+      const modifiedEditor = editorRef.current.getModifiedEditor();
+      modifiedEditor.updateOptions({ readOnly: mode === 'comment' });
+
+      // Clear hover decorations when switching to edit mode
+      if (mode === 'edit' && hoverDecorationsRef.current.length > 0) {
+        hoverDecorationsRef.current = modifiedEditor.deltaDecorations(
+          hoverDecorationsRef.current,
+          []
+        );
+      }
+    }
+  }, [mode]);
 
   // Keep refs up to date
   useEffect(() => {
     onNextFileRef.current = onNextFile;
     onPreviousFileRef.current = onPreviousFile;
-  }, [onNextFile, onPreviousFile]);
+    onNextChangeRef.current = onNextChange;
+    onPreviousChangeRef.current = onPreviousChange;
+  }, [onNextFile, onPreviousFile, onNextChange, onPreviousChange]);
 
   // Expose navigation methods to parent
   useImperativeHandle(ref, () => ({
@@ -72,66 +103,77 @@ const DiffEditor = forwardRef<DiffEditorHandle, DiffEditorProps>(({
       if (!editor) return;
 
       const lineChanges = editor.getLineChanges();
-      if (!lineChanges || lineChanges.length === 0) return;
-
-      const modifiedEditor = editor.getModifiedEditor();
-      const currentLine = modifiedEditor.getPosition()?.lineNumber ?? 0;
-
-      // Find the next change after current position
-      let nextIndex = currentChangeIndexRef.current + 1;
-      if (nextIndex >= lineChanges.length) {
-        nextIndex = 0; // Wrap around to first change
+      if (!lineChanges || lineChanges.length === 0) {
+        // No changes in this file, try next file
+        onNextFileRef.current?.();
+        return;
       }
 
-      // Or find the first change that starts after current line
+      const modifiedEditor = editor.getModifiedEditor();
+      const visibleRanges = modifiedEditor.getVisibleRanges();
+      const viewBottom = visibleRanges.length > 0 ? visibleRanges[0].endLineNumber : 0;
+
+      // Find the next change that starts below the current view
+      let nextIdx = -1;
       for (let i = 0; i < lineChanges.length; i++) {
-        const change = lineChanges[i];
-        const changeLine = change.modifiedStartLineNumber || change.originalStartLineNumber;
-        if (changeLine > currentLine) {
-          nextIndex = i;
+        const changeLine = lineChanges[i].modifiedStartLineNumber || 1;
+        if (changeLine > viewBottom) {
+          nextIdx = i;
           break;
         }
       }
 
-      currentChangeIndexRef.current = nextIndex;
-      const change = lineChanges[nextIndex];
-      const targetLine = change.modifiedStartLineNumber || change.originalStartLineNumber;
+      if (nextIdx === -1) {
+        // No more changes below current view, try to go to next file
+        if (onNextFileRef.current) {
+          onNextFileRef.current();
+        }
+        return;
+      }
 
+      const change = lineChanges[nextIdx];
+      const targetLine = change.modifiedStartLineNumber || 1;
       modifiedEditor.revealLineInCenter(targetLine);
       modifiedEditor.setPosition({ lineNumber: targetLine, column: 1 });
+      currentChangeIndexRef.current = nextIdx;
     },
     goToPreviousChange: () => {
       const editor = editorRef.current;
       if (!editor) return;
 
       const lineChanges = editor.getLineChanges();
-      if (!lineChanges || lineChanges.length === 0) return;
+      if (!lineChanges || lineChanges.length === 0) {
+        // No changes in this file, try previous file
+        onPreviousFileRef.current?.();
+        return;
+      }
 
       const modifiedEditor = editor.getModifiedEditor();
-      const currentLine = modifiedEditor.getPosition()?.lineNumber ?? Infinity;
+      const prevIdx = currentChangeIndexRef.current <= 0 ? -1 : currentChangeIndexRef.current - 1;
 
-      // Find the previous change before current position
-      let prevIndex = currentChangeIndexRef.current - 1;
-      if (prevIndex < 0) {
-        prevIndex = lineChanges.length - 1; // Wrap around to last change
-      }
-
-      // Or find the last change that starts before current line
-      for (let i = lineChanges.length - 1; i >= 0; i--) {
-        const change = lineChanges[i];
-        const changeLine = change.modifiedStartLineNumber || change.originalStartLineNumber;
-        if (changeLine < currentLine) {
-          prevIndex = i;
-          break;
+      if (prevIdx < 0) {
+        // At start of file, try to go to previous file
+        if (onPreviousFileRef.current) {
+          onPreviousFileRef.current();
+          return;
         }
+        // No previous file, go to first change
+        const change = lineChanges[0];
+        const targetLine = change.modifiedStartLineNumber || 1;
+        modifiedEditor.revealLineInCenter(targetLine);
+        modifiedEditor.setPosition({ lineNumber: targetLine, column: 1 });
+        currentChangeIndexRef.current = 0;
+        return;
       }
 
-      currentChangeIndexRef.current = prevIndex;
-      const change = lineChanges[prevIndex];
-      const targetLine = change.modifiedStartLineNumber || change.originalStartLineNumber;
-
+      const change = lineChanges[prevIdx];
+      const targetLine = change.modifiedStartLineNumber || 1;
       modifiedEditor.revealLineInCenter(targetLine);
       modifiedEditor.setPosition({ lineNumber: targetLine, column: 1 });
+      currentChangeIndexRef.current = prevIdx;
+    },
+    resetChangeIndex: () => {
+      currentChangeIndexRef.current = -1;
     }
   }), []);
 
@@ -153,9 +195,10 @@ const DiffEditor = forwardRef<DiffEditorHandle, DiffEditorProps>(({
     );
 
     // Create diff editor with light theme
+    // Start in read-only mode (comment mode is default)
     const diffEditor = monaco.editor.createDiffEditor(containerRef.current, {
       theme: 'vs',
-      readOnly: false,
+      readOnly: modeRef.current === 'comment',
       originalEditable: false,
       automaticLayout: true,
       renderSideBySide: true,
@@ -164,7 +207,7 @@ const DiffEditor = forwardRef<DiffEditorHandle, DiffEditorProps>(({
       renderMarginRevertIcon: false, // Disable the revert arrows
       lineNumbers: 'on',
       minimap: { enabled: false },
-      scrollBeyondLastLine: false,
+      scrollBeyondLastLine: true,
       wordWrap: 'on',
       glyphMargin: true,
       lineDecorationsWidth: 10,
@@ -187,6 +230,28 @@ const DiffEditor = forwardRef<DiffEditorHandle, DiffEditorProps>(({
     // Listen for content changes on the modified editor
     const modifiedEditor = diffEditor.getModifiedEditor();
     const originalEditor = diffEditor.getOriginalEditor();
+
+    // Reset change index for new file
+    currentChangeIndexRef.current = -1;
+
+    // Auto-scroll to first diff when Monaco finishes computing it (once per file)
+    let hasScrolledToFirstChange = false;
+    const scrollToFirstChange = () => {
+      if (hasScrolledToFirstChange) return;
+      const changes = diffEditor.getLineChanges();
+      if (changes && changes.length > 0) {
+        hasScrolledToFirstChange = true;
+        const firstChange = changes[0];
+        const targetLine = firstChange.modifiedStartLineNumber || 1;
+        modifiedEditor.revealLineInCenter(targetLine);
+        modifiedEditor.setPosition({ lineNumber: targetLine, column: 1 });
+        currentChangeIndexRef.current = 0;
+      }
+    };
+
+    // Try immediately in case diff is already computed, then listen for update
+    scrollToFirstChange();
+    const diffUpdateDisposable = diffEditor.onDidUpdateDiff(scrollToFirstChange);
 
     // Add keybindings to both editors to prevent Monaco from intercepting our shortcuts
     const addKeybindings = (editor: monaco.editor.IStandaloneCodeEditor) => {
@@ -331,12 +396,20 @@ const DiffEditor = forwardRef<DiffEditorHandle, DiffEditorProps>(({
     }
     modifiedEditor.deltaDecorations([], modifiedDecorations);
 
-    // Add mouse move handler for original editor
+    // Add mouse move handler for original editor (comment mode only)
     originalEditor.onMouseMove((e) => {
+      // Only show hover effects in comment mode
+      if (modeRef.current !== 'comment') {
+        if (currentHoveredLineRef.current.left !== null) {
+          toggleGlyphVisibility(currentHoveredLineRef.current.left, false, 'left');
+          currentHoveredLineRef.current.left = null;
+        }
+        return;
+      }
       if (e.target.position) {
         const lineNumber = e.target.position.lineNumber;
         const currentHovered = currentHoveredLineRef.current.left;
-        
+
         if (currentHovered !== lineNumber) {
           if (currentHovered !== null) {
             toggleGlyphVisibility(currentHovered, false, 'left');
@@ -355,12 +428,20 @@ const DiffEditor = forwardRef<DiffEditorHandle, DiffEditorProps>(({
       }
     });
 
-    // Add mouse move handler for modified editor
+    // Add mouse move handler for modified editor (comment mode only)
     modifiedEditor.onMouseMove((e) => {
+      // Only show hover effects in comment mode
+      if (modeRef.current !== 'comment') {
+        if (currentHoveredLineRef.current.right !== null) {
+          toggleGlyphVisibility(currentHoveredLineRef.current.right, false, 'right');
+          currentHoveredLineRef.current.right = null;
+        }
+        return;
+      }
       if (e.target.position) {
         const lineNumber = e.target.position.lineNumber;
         const currentHovered = currentHoveredLineRef.current.right;
-        
+
         if (currentHovered !== lineNumber) {
           if (currentHovered !== null) {
             toggleGlyphVisibility(currentHovered, false, 'right');
@@ -379,83 +460,72 @@ const DiffEditor = forwardRef<DiffEditorHandle, DiffEditorProps>(({
       }
     });
     
-    // Simple glyph click handler for original editor
+    // Helper to open comment dialog
+    const openCommentDialog = (
+      editor: monaco.editor.IStandaloneCodeEditor,
+      position: monaco.Position,
+      side: 'left' | 'right',
+      mouseEvent: MouseEvent
+    ) => {
+      const model = editor.getModel();
+      const selection = editor.getSelection();
+      let selectedText = '';
+      let startLine = position.lineNumber;
+      let endLine = position.lineNumber;
+
+      if (selection && !selection.isEmpty() && model) {
+        selectedText = model.getValueInRange(selection);
+        startLine = selection.startLineNumber;
+        endLine = selection.endLineNumber;
+      } else {
+        selectedText = model?.getLineContent(position.lineNumber) || '';
+      }
+
+      setShowCommentDialog({
+        line: startLine,
+        side,
+        x: mouseEvent.clientX + 100,
+        y: mouseEvent.clientY,
+        selectedText,
+        startLine,
+        endLine
+      });
+    };
+
+    // Glyph click handler for original editor (comment mode only)
     originalEditor.onMouseDown((e) => {
+      if (modeRef.current !== 'comment') return;
       if (e.target.type === monaco.editor.MouseTargetType.GUTTER_GLYPH_MARGIN) {
         e.event.preventDefault();
         const position = e.target.position;
         if (position) {
-          const model = originalEditor.getModel();
-          const selection = originalEditor.getSelection();
-          let selectedText = '';
-          let startLine = position.lineNumber;
-          let endLine = position.lineNumber;
-          
-          // Check if there's an active selection
-          if (selection && !selection.isEmpty() && model) {
-            selectedText = model.getValueInRange(selection);
-            startLine = selection.startLineNumber;
-            endLine = selection.endLineNumber;
-          } else {
-            // Fall back to line content if no selection
-            selectedText = model?.getLineContent(position.lineNumber) || '';
-          }
-          
-          // Use the actual mouse event coordinates for positioning
           const mouseEvent = e.event.browserEvent as MouseEvent;
-          
-          setShowCommentDialog({
-            line: startLine,
-            side: 'left',
-            x: mouseEvent.clientX + 100,
-            y: mouseEvent.clientY,
-            selectedText: selectedText,
-            startLine: startLine,
-            endLine: endLine
-          });
+          openCommentDialog(originalEditor, position, 'left', mouseEvent);
         }
       }
     });
-    
-    // Simple glyph click handler for modified editor
+
+    // Glyph click handler for modified editor (comment mode only)
     modifiedEditor.onMouseDown((e) => {
-      if (e.target.type === monaco.editor.MouseTargetType.GUTTER_GLYPH_MARGIN) {
+      if (modeRef.current !== 'comment') return;
+
+      const isGlyphClick = e.target.type === monaco.editor.MouseTargetType.GUTTER_GLYPH_MARGIN;
+      const isLineClick =
+        e.target.type === monaco.editor.MouseTargetType.CONTENT_TEXT ||
+        e.target.type === monaco.editor.MouseTargetType.CONTENT_EMPTY;
+
+      if (isGlyphClick || isLineClick) {
         e.event.preventDefault();
         const position = e.target.position;
         if (position) {
-          const model = modifiedEditor.getModel();
-          const selection = modifiedEditor.getSelection();
-          let selectedText = '';
-          let startLine = position.lineNumber;
-          let endLine = position.lineNumber;
-          
-          // Check if there's an active selection
-          if (selection && !selection.isEmpty() && model) {
-            selectedText = model.getValueInRange(selection);
-            startLine = selection.startLineNumber;
-            endLine = selection.endLineNumber;
-          } else {
-            // Fall back to line content if no selection
-            selectedText = model?.getLineContent(position.lineNumber) || '';
-          }
-          
-          // Use the actual mouse event coordinates for positioning
           const mouseEvent = e.event.browserEvent as MouseEvent;
-          
-          setShowCommentDialog({
-            line: startLine,
-            side: 'right',
-            x: mouseEvent.clientX + 100,
-            y: mouseEvent.clientY,
-            selectedText: selectedText,
-            startLine: startLine,
-            endLine: endLine
-          });
+          openCommentDialog(modifiedEditor, position, 'right', mouseEvent);
         }
       }
     });
 
     return () => {
+      diffUpdateDisposable.dispose();
       originalModel.dispose();
       modifiedModel.dispose();
       diffEditor.dispose();
